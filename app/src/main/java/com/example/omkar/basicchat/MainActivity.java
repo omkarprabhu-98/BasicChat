@@ -15,6 +15,9 @@ import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 
+import com.google.firebase.database.ChildEventListener;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 
@@ -43,6 +46,8 @@ public class MainActivity extends AppCompatActivity {
     private FirebaseDatabase mFirebaseDatabase;
     private DatabaseReference mMessageDatabaseReference;
 
+    // Firebase Auth Object
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -54,7 +59,35 @@ public class MainActivity extends AppCompatActivity {
         mFirebaseDatabase = FirebaseDatabase.getInstance();
         mMessageDatabaseReference = mFirebaseDatabase.getReference().child("messages");
 
+        // Event Listener for reading data from real time database
+        mMessageDatabaseReference.addChildEventListener(new ChildEventListener() {
+            @Override
+            public void onChildAdded(DataSnapshot dataSnapshot, String s) {
+                // add Messages the the list
+                BasicMessage basicMessage = dataSnapshot.getValue(BasicMessage.class);
+                mMessageAdapter.add(basicMessage);
+            }
 
+            @Override
+            public void onChildChanged(DataSnapshot dataSnapshot, String s) {
+
+            }
+
+            @Override
+            public void onChildRemoved(DataSnapshot dataSnapshot) {
+
+            }
+
+            @Override
+            public void onChildMoved(DataSnapshot dataSnapshot, String s) {
+
+            }
+
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+
+            }
+        });
 
         // Initialize references to views
         mProgressBar = (ProgressBar) findViewById(R.id.progressBar);
@@ -108,6 +141,8 @@ public class MainActivity extends AppCompatActivity {
                 // Create a object using the text entered and Image picked
                 BasicMessage basicMessage = new BasicMessage(mMessageEditText.getText().toString(), mUsername, null);
 
+                // Push message to real-time Database
+                mMessageDatabaseReference.push().setValue(basicMessage);
 
                 // Clear input box
                 mMessageEditText.setText("");
