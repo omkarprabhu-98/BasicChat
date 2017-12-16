@@ -1,6 +1,8 @@
 package com.example.omkar.basicchat;
 
+import android.content.Intent;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.text.Editable;
 import android.text.InputFilter;
@@ -14,7 +16,11 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.ProgressBar;
+import android.widget.Toast;
 
+import com.firebase.ui.auth.AuthUI;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.ChildEventListener;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
@@ -30,6 +36,7 @@ public class MainActivity extends AppCompatActivity {
 
     public static final String ANONYMOUS = "anonymous";
     public static final int DEFAULT_MSG_LENGTH_LIMIT = 1000;
+    public static final int RC_SIGN_IN = 1;
 
     // Element reference variables
     private ListView mMessageListView;
@@ -45,8 +52,11 @@ public class MainActivity extends AppCompatActivity {
     // Database reference objects
     private FirebaseDatabase mFirebaseDatabase;
     private DatabaseReference mMessageDatabaseReference;
+    private ChildEventListener mChildEventListener;
 
-    // Firebase Auth Object
+    // Firebase Auth Objects
+    private FirebaseAuth mFirebaseAuth;
+    private FirebaseAuth.AuthStateListener mAuthStateListener;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,35 +69,31 @@ public class MainActivity extends AppCompatActivity {
         mFirebaseDatabase = FirebaseDatabase.getInstance();
         mMessageDatabaseReference = mFirebaseDatabase.getReference().child("messages");
 
-        // Event Listener for reading data from real time database
-        mMessageDatabaseReference.addChildEventListener(new ChildEventListener() {
+        // Auth objects initialized
+        mFirebaseAuth = FirebaseAuth.getInstance();
+
+
+        // Checking if user is authenticated to access database
+        mAuthStateListener = new FirebaseAuth.AuthStateListener() {
             @Override
-            public void onChildAdded(DataSnapshot dataSnapshot, String s) {
-                // add Messages the the list
-                BasicMessage basicMessage = dataSnapshot.getValue(BasicMessage.class);
-                mMessageAdapter.add(basicMessage);
+            public void onAuthStateChanged(@NonNull FirebaseAuth firebaseAuth) {
+                // get user from firebase Auth passed during AuthStateChange
+                FirebaseUser user = firebaseAuth.getCurrentUser();
+                if (user != null){
+                    // user is signed in
+                    Toast.makeText(MainActivity.this, "You're now signed in. Welcome.", Toast.LENGTH_SHORT).show();
+                    onSignedIn(user.getDisplayName());
+                }
+                else {
+                    // user is signed out
+                    onSignedOut();
+//                  // Load FirebaseAuth UI
+                    startActivityForResult(
+                            AuthUI.getInstance().createSignInIntentBuilder().build(),
+                            RC_SIGN_IN);
+                }
             }
-
-            @Override
-            public void onChildChanged(DataSnapshot dataSnapshot, String s) {
-
-            }
-
-            @Override
-            public void onChildRemoved(DataSnapshot dataSnapshot) {
-
-            }
-
-            @Override
-            public void onChildMoved(DataSnapshot dataSnapshot, String s) {
-
-            }
-
-            @Override
-            public void onCancelled(DatabaseError databaseError) {
-
-            }
-        });
+        };
 
         // Initialize references to views
         mProgressBar = (ProgressBar) findViewById(R.id.progressBar);
@@ -159,6 +165,117 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        return super.onOptionsItemSelected(item);
+
+        switch (item.getItemId()){
+            case R.id.sign_out_menu:
+
+                // sign out
+                AuthUI.getInstance().signOut(this);
+                return true;
+
+            default:
+                return super.onOptionsItemSelected(item);
+        }
+    }
+
+    // overriding activity lifecycle methods for mAuthStateListener
+    @Override
+    protected void onPause() {
+        super.onPause();
+
+        if (mAuthStateListener != null){
+            mFirebaseAuth.removeAuthStateListener(mAuthStateListener);
+        }
+
+        // detach database rea listener
+        if(mChildEventListener != null){
+            mMessageDatabaseReference.removeEventListener(mChildEventListener);
+            mChildEventListener = null;
+        }
+
+        // remove messages in display
+        mMessageAdapter.clear();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mFirebaseAuth.addAuthStateListener(mAuthStateListener);
+    }
+
+    /**
+     * Load messages and set username after the user has signed in
+     * @param username
+     */
+    private void onSignedIn(String username){
+
+        // set username of the signed in user
+        mUsername = username;
+
+        if(mChildEventListener == null){
+            mChildEventListener = new ChildEventListener() {
+                @Override
+                public void onChildAdded(DataSnapshot dataSnapshot, String s) {
+                    // add Messages the the list
+                    BasicMessage basicMessage = dataSnapshot.getValue(BasicMessage.class);
+                    mMessageAdapter.add(basicMessage);
+                }
+
+                @Override
+                public void onChildChanged(DataSnapshot dataSnapshot, String s) {}
+
+                @Override
+                public void onChildRemoved(DataSnapshot dataSnapshot) {}
+
+                @Override
+                public void onChildMoved(DataSnapshot dataSnapshot, String s) {}
+
+                @Override
+                public void onCancelled(DatabaseError databaseError) {}
+            };
+
+            // Event Listener for reading data from real time database
+            mMessageDatabaseReference.addChildEventListener(mChildEventListener);
+        }
+
+
+    }
+
+    /**
+     * Remove messages and reset username after the user has signed in
+     *
+     */
+    private void onSignedOut(){
+
+        // set username of the signed in user
+        mUsername = ANONYMOUS;
+
+        // detach ChildEventListener after signed out
+        if(mChildEventListener != null){
+            mMessageDatabaseReference.removeEventListener(mChildEventListener);
+            mChildEventListener = null;
+        }
+
+        // remove messages in display
+        mMessageAdapter.clear();
+
+    }
+
+
+    // Overriding onActivityResult for handling canceling sign in
+    // this method gets called before the onResume method of the activity lifecycle
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == RC_SIGN_IN){
+            if (resultCode == RESULT_OK){
+                Toast.makeText(MainActivity.this, "Signed in!", Toast.LENGTH_SHORT).show();
+            }
+            else if (resultCode == RESULT_CANCELED){
+                Toast.makeText(this, "Sign in cancelled", Toast.LENGTH_SHORT).show();
+                finish();
+            }
+        }
     }
 }
